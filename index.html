@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>זרם – ניהול תזרים חכם</title>
+<!-- PWA manifest (inline data URI so no server needed for local testing) -->
+<link rel="manifest" href="manifest.json"/>
+<!-- iOS PWA support -->
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="זרם"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
+<!-- Android theme -->
+<meta name="theme-color" content="#0B1437"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --navy: #0B1437;
+    --navy-mid: #111d48;
+    --navy-light: #1a2d6d;
+    --blue: #2563EB;
+    --blue-glow: #3b82f6;
+    --cyan: #06b6d4;
+    --green: #10b981;
+    --green-dark: #059669;
+    --red: #ef4444;
+    --red-dark: #dc2626;
+    --gold: #f59e0b;
+    --surface: #141e4f;
+    --surface-2: #1c2960;
+    --surface-3: #243280;
+    --border: rgba(255,255,255,0.08);
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Heebo', sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Animated starfield background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(37,99,235,0.18) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 80%, rgba(6,182,212,0.10) 0%, transparent 55%),
+      radial-gradient(ellipse 50% 40% at 50% 50%, rgba(16,185,129,0.06) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page-content { position: relative; z-index: 1; }
+
+  /* ── Header ── */
+  .site-header {
+    background: linear-gradient(135deg, #0f1f5c 0%, #1a3080 40%, #0e4f8a 100%);
+    border-bottom: 1px solid rgba(59,130,246,0.25);
+    box-shadow: 0 4px 40px rgba(37,99,235,0.25);
+    position: relative;
+    overflow: hidden;
+  }
+  .site-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 80px,
+      rgba(255,255,255,0.015) 80px,
+      rgba(255,255,255,0.015) 81px
+    );
+    pointer-events: none;
+  }
+  .header-glow {
+    position: absolute;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(59,130,246,0.3) 0%, transparent 70%);
+    top: -100px; left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  /* ── Stat Cards ── */
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.25rem 1.5rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    opacity: 0.08;
+    transform: translate(30%, -30%);
+  }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  .stat-card.income::before { background: var(--green); }
+  .stat-card.expense::before { background: var(--red); }
+  .stat-card.balance::before { background: var(--blue); }
+
+  /* ── Form ── */
+  .form-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .form-panel-header {
+    background: linear-gradient(135deg, var(--navy-light), var(--surface-2));
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; }
+
+  .form-input {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.65rem 0.9rem;
+    color: var(--text);
+    font-family: 'Heebo', sans-serif;
+    font-size: 0.95rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+    margin-top: 0.35rem;
+    direction: rtl;
+  }
+  .form-input:focus {
+    border-color: var(--blue-glow);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.18);
+  }
+  .form-input option { background: var(--navy-mid); }
+
+  .type-btn {
+    flex: 1;
+    padding: 0.65rem;
+    border-radius: 10px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .type-btn.income { background: rgba(16,185,129,0.12); color: var(--green); border-color: rgba(16,185,129,0.3); }
+  .type-btn.expense { background: rgba(239,68,68,0.12); color: var(--red); border-color: rgba(239,68,68,0.3); }
+  .type-btn.income.active { background: var(--green); color: #fff; border-color: var(--green); box-shadow: 0 4px 15px rgba(16,185,129,0.4); }
+  .type-btn.expense.active { background: var(--red); color: #fff; border-color: var(--red); box-shadow: 0 4px 15px rgba(239,68,68,0.4); }
+
+  .submit-btn {
+    width: 100%;
+    padding: 0.85rem;
+    background: linear-gradient(135deg, var(--blue), #1d4ed8);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+    box-shadow: 0 4px 15px rgba(37,99,235,0.4);
+  }
+  .submit-btn:hover { background: linear-gradient(135deg, #3b82f6, var(--blue)); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.5); }
+  .submit-btn:active { transform: translateY(0); }
+
+  /* ── Advisor box ── */
+  .advisor-box {
+    background: linear-gradient(135deg, rgba(17,29,72,0.9), rgba(26,45,109,0.8));
+    border: 1px solid rgba(59,130,246,0.3);
+    border-right: 4px solid var(--blue-glow);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .advisor-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent);
+  }
+  .advisor-insight { font-size: 0.88rem; line-height: 1.65; color: var(--text); padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
+  .advisor-insight:last-child { border-bottom: none; }
+  .advisor-insight.warning { color: #fca5a5; }
+  .advisor-insight.success { color: #6ee7b7; }
+  .advisor-insight.info { color: #93c5fd; }
+  .advisor-insight.gold { color: #fcd34d; }
+
+  /* ── Chart container ── */
+  .chart-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.25rem;
+    height: 100%;
+  }
+
+  /* ── Transaction list ── */
+  .tx-list-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .tx-list-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    flex-shrink: 0;
+  }
+  .tx-scroll { overflow-y: auto; flex: 1; max-height: 340px; }
+  .tx-scroll::-webkit-scrollbar { width: 4px; }
+  .tx-scroll::-webkit-scrollbar-track { background: transparent; }
+  .tx-scroll::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
+
+  .tx-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+    animation: slideIn 0.3s ease;
+  }
+  .tx-item:hover { background: rgba(255,255,255,0.03); }
+  .tx-item:last-child { border-bottom: none; }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .tx-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .tx-desc { flex: 1; min-width: 0; }
+  .tx-desc .title { font-size: 0.88rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tx-desc .meta { font-size: 0.75rem; color: var(--text-dim); margin-top: 1px; }
+
+  .tx-amount { font-size: 0.95rem; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .tx-amount.income { color: var(--green); }
+  .tx-amount.expense { color: var(--red); }
+
+  .delete-btn {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.2);
+    color: #f87171;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .delete-btn:hover { background: rgba(239,68,68,0.25); border-color: rgba(239,68,68,0.5); }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-dim);
+  }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.5; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 50%;
+    transform: translateX(50%) translateY(100px);
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.7rem 1.5rem;
+    border-radius: 50px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    z-index: 999;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  }
+  #toast.show { transform: translateX(50%) translateY(0); }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── Pulse dot ── */
+  .pulse-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--blue-glow);
+    box-shadow: 0 0 0 0 rgba(59,130,246,0.4);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+    70% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+    100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+  }
+
+  /* ── Responsive tweaks ── */
+  @media (max-width: 768px) {
+    .tx-scroll { max-height: 260px; }
+  }
+</style>
+</head>
+<body>
+<div class="page-content">
+
+  <!-- ══ HEADER ══ -->
+  <header class="site-header py-6 px-6">
+    <div class="header-glow"></div>
+    <div class="max-w-6xl mx-auto relative">
+      <div class="flex items-center gap-3 mb-1">
+        <span style="font-size:2rem">💧</span>
+        <h1 style="font-family:'Rubik',sans-serif; font-size:2rem; font-weight:900; color:#fff; letter-spacing:-0.02em;">
+          זָרַם
+        </h1>
+        <div class="pulse-dot mr-2"></div>
+      </div>
+      <p style="font-size:0.92rem; color:rgba(147,197,253,0.85); font-weight:400; max-width:400px;">
+        ניהול תזרים מזומנים חכם · קבל שליטה מלאה על הכסף שלך
+      </p>
+    </div>
+  </header>
+
+  <!-- ══ MAIN ══ -->
+  <main class="max-w-6xl mx-auto px-4 py-6" style="display:grid; grid-template-columns:1fr 2fr; gap:1.5rem;">
+
+    <!-- ─── LEFT PANEL: FORM ─── -->
+    <div class="form-panel" style="align-self: start; position: sticky; top: 1.5rem;">
+      <div class="form-panel-header">
+        <div class="flex items-center gap-2">
+          <span>✏️</span>
+          <span style="font-weight:700; font-size:0.95rem;">הוסף תנועה חדשה</span>
+        </div>
+      </div>
+      <div class="p-5 space-y-4">
+
+        <!-- Type buttons -->
+        <div>
+          <label>סוג תנועה</label>
+          <div class="flex gap-2 mt-2" id="typeBtns">
+            <button class="type-btn income active" onclick="setType('income')">+ הכנסה</button>
+            <button class="type-btn expense" onclick="setType('expense')">− הוצאה</button>
+          </div>
+        </div>
+
+        <!-- Amount -->
+        <div>
+          <label for="amountInput">סכום (₪)</label>
+          <input type="number" id="amountInput" class="form-input" placeholder="0.00" min="0" step="0.01"/>
+        </div>
+
+        <!-- Category -->
+        <div>
+          <label for="categorySelect">קטגוריה</label>
+          <select id="categorySelect" class="form-input">
+            <option value="מזון וסופר">🛒 מזון וסופר</option>
+            <option value="דיור וחשבונות">🏠 דיור וחשבונות</option>
+            <option value="תחבורה">🚗 תחבורה</option>
+            <option value="פנאי ובילויים">🎉 פנאי ובילויים</option>
+            <option value="משכורת">💼 משכורת</option>
+            <option value="שונות">📦 שונות</option>
+          </select>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label for="descInput">תיאור (אופציונלי)</label>
+          <input type="text" id="descInput" class="form-input" placeholder="לדוגמה: קניות שישי..."/>
+        </div>
+
+        <!-- Submit -->
+        <button class="submit-btn" onclick="addTransaction()">
+          <span id="submitLabel">＋ הוסף תנועה</span>
+        </button>
+
+        <!-- Mini stats inside form -->
+        <div style="border-top:1px solid var(--border); padding-top:1rem;">
+          <p style="font-size:0.75rem; color:var(--text-dim); text-align:center;">
+            <span id="txCount">0</span> תנועות רשומות
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── RIGHT PANEL: DASHBOARD ─── -->
+    <div class="space-y-5">
+
+      <!-- Stat Cards -->
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1rem;">
+        <!-- Income -->
+        <div class="stat-card income">
+          <p style="font-size:0.72rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--green); opacity:0.8;">הכנסות</p>
+          <p id="totalIncome" style="font-size:1.6rem; font-weight:800; color:var(--green); margin-top:0.25rem; font-variant-numeric:tabular-nums;">₪0</p>
+          <p style="font-size:0.75rem; color:var(--text-dim); margin-top:0.15rem;">סה״כ נכנס</p>
+        </div>
+        <!-- Expense -->
+        <div class="stat-card expense">
+          <p style="font-size:0.72rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--red); opacity:0.8;">הוצאות</p>
+          <p id="totalExpense" style="font-size:1.6rem; font-weight:800; color:var(--red); margin-top:0.25rem; font-variant-numeric:tabular-nums;">₪0</p>
+          <p style="font-size:0.75rem; color:var(--text-dim); margin-top:0.15rem;">סה״כ יצא</p>
+        </div>
+        <!-- Balance -->
+        <div class="stat-card balance">
+          <p style="font-size:0.72rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--cyan); opacity:0.8;">יתרה</p>
+          <p id="balance" style="font-size:1.6rem; font-weight:800; color:var(--cyan); margin-top:0.25rem; font-variant-numeric:tabular-nums;">₪0</p>
+          <p style="font-size:0.75rem; color:var(--text-dim); margin-top:0.15rem;">נוכחית</p>
+        </div>
+      </div>
+
+      <!-- Smart Advisor -->
+      <div class="advisor-box">
+        <div class="flex items-center gap-2 mb-3">
+          <span style="font-size:1.1rem;">🤖</span>
+          <span style="font-weight:800; font-size:0.9rem; color:#93c5fd; letter-spacing:0.05em; text-transform:uppercase;">היועץ החכם</span>
+        </div>
+        <div id="advisorContent">
+          <p class="advisor-insight info">💡 הוסף תנועות כדי לקבל תובנות מותאמות אישית על המצב הפיננסי שלך.</p>
+        </div>
+      </div>
+
+      <!-- Chart + History -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; min-height:360px;">
+
+        <!-- Doughnut Chart -->
+        <div class="chart-container flex flex-col">
+          <p class="section-label">התפלגות הוצאות</p>
+          <div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:280px;">
+            <canvas id="doughnutChart"></canvas>
+          </div>
+          <div id="emptyChart" class="empty-state" style="display:none;">
+            <div class="icon">📊</div>
+            <p style="font-size:0.85rem;">אין נתוני הוצאות להצגה</p>
+          </div>
+        </div>
+
+        <!-- Transaction History -->
+        <div class="tx-list-container">
+          <div class="tx-list-header flex items-center justify-between">
+            <p class="section-label" style="margin-bottom:0;">היסטוריית תנועות</p>
+            <span id="txBadge" style="background:var(--surface-3); color:var(--text-muted); font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:50px;">0</span>
+          </div>
+          <div class="tx-scroll" id="txList">
+            <div class="empty-state">
+              <div class="icon">🧾</div>
+              <p style="font-size:0.85rem;">עדיין אין תנועות</p>
+              <p style="font-size:0.78rem; margin-top:0.25rem;">הוסף תנועה ראשונה מהטופס</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /right panel -->
+  </main>
+
+  <!-- ══ RESPONSIVE: stack on mobile ══ -->
+  <style>
+    @media (max-width: 768px) {
+      main { grid-template-columns: 1fr !important; }
+      .form-panel { position: static !important; }
+      [style*="grid-template-columns:repeat(3"] { grid-template-columns: repeat(3,1fr) !important; }
+      [style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+    }
+  </style>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// DATA & STORAGE
+// ══════════════════════════════════════════
+const STORAGE_KEY = 'zaram_transactions';
+let transactions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let currentType = 'income';
+let chartInstance = null;
+
+const CATEGORY_ICONS = {
+  'מזון וסופר':     '🛒',
+  'דיור וחשבונות':  '🏠',
+  'תחבורה':         '🚗',
+  'פנאי ובילויים':  '🎉',
+  'משכורת':         '💼',
+  'שונות':          '📦',
+};
+
+const CHART_COLORS = [
+  '#3b82f6','#06b6d4','#8b5cf6','#f59e0b',
+  '#10b981','#ef4444','#ec4899','#14b8a6'
+];
+
+// ══════════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════════
+function setType(type) {
+  currentType = type;
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.type-btn.${type}`).classList.add('active');
+  document.getElementById('submitLabel').textContent = type === 'income' ? '＋ הוסף הכנסה' : '− הוסף הוצאה';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function fmt(n) {
+  return '₪' + Math.abs(n).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+// ══════════════════════════════════════════
+// CORE LOGIC
+// ══════════════════════════════════════════
+function addTransaction() {
+  const amount = parseFloat(document.getElementById('amountInput').value);
+  const category = document.getElementById('categorySelect').value;
+  const desc = document.getElementById('descInput').value.trim() || category;
+
+  if (!amount || amount <= 0) {
+    showToast('❗ יש להזין סכום תקין');
+    document.getElementById('amountInput').focus();
+    return;
+  }
+
+  const tx = {
+    id: Date.now(),
+    type: currentType,
+    amount,
+    category,
+    desc,
+    date: new Date().toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'2-digit' })
+  };
+
+  transactions.unshift(tx);
+  save();
+  render();
+
+  // Reset form
+  document.getElementById('amountInput').value = '';
+  document.getElementById('descInput').value = '';
+  showToast(currentType === 'income' ? '✅ הכנסה נוספה בהצלחה' : '✅ הוצאה נוספה בהצלחה');
+}
+
+function deleteTransaction(id) {
+  transactions = transactions.filter(t => t.id !== id);
+  save();
+  render();
+  showToast('🗑️ תנועה נמחקה');
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+}
+
+// ══════════════════════════════════════════
+// CALCULATIONS
+// ══════════════════════════════════════════
+function calcTotals() {
+  const totalIncome  = transactions.filter(t => t.type === 'income').reduce((s,t) => s + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s,t) => s + t.amount, 0);
+  const balance = totalIncome - totalExpense;
+  return { totalIncome, totalExpense, balance };
+}
+
+function calcExpenseByCategory() {
+  const map = {};
+  transactions.filter(t => t.type === 'expense').forEach(t => {
+    map[t.category] = (map[t.category] || 0) + t.amount;
+  });
+  return map;
+}
+
+// ══════════════════════════════════════════
+// SMART ADVISOR
+// ══════════════════════════════════════════
+function runAdvisor() {
+  const { totalIncome, totalExpense } = calcTotals();
+  const catMap = calcExpenseByCategory();
+  const insights = [];
+
+  if (transactions.length === 0) {
+    return '<p class="advisor-insight info">💡 הוסף תנועות כדי לקבל תובנות מותאמות אישית.</p>';
+  }
+
+  // 1. Ratio check
+  if (totalIncome > 0) {
+    const ratio = totalExpense / totalIncome;
+    if (ratio > 0.9) {
+      insights.push(`<p class="advisor-insight warning">🚨 <strong>אזהרה:</strong> ההוצאות שלך מהוות ${Math.round(ratio*100)}% מההכנסות – אתה על הקצה! נדרשת פעולה מיידית לצמצום הוצאות.</p>`);
+    } else if (ratio < 0.6) {
+      insights.push(`<p class="advisor-insight success">🏆 <strong>כל הכבוד!</strong> ההוצאות שלך רק ${Math.round(ratio*100)}% מההכנסות – ניהול פיננסי מצוין. שקול להגדיל חסכונות.</p>`);
+    } else {
+      insights.push(`<p class="advisor-insight info">📊 ההוצאות מהוות <strong>${Math.round(ratio*100)}%</strong> מההכנסות – מצב סביר, יש מקום לשיפור.</p>`);
+    }
+  }
+
+  // 2. Top spender category
+  const cats = Object.entries(catMap);
+  if (cats.length > 0) {
+    cats.sort((a,b) => b[1] - a[1]);
+    const [topCat, topAmt] = cats[0];
+    const icon = CATEGORY_ICONS[topCat] || '📦';
+    insights.push(`<p class="advisor-insight gold">💸 <strong>זולל הכסף העיקרי:</strong> "${icon} ${topCat}" עם ${fmt(topAmt)} – זוהי ההוצאה הגבוהה ביותר שלך החודש.</p>`);
+
+    // 3. Cut suggestion
+    const target = topAmt * 0.9;
+    insights.push(`<p class="advisor-insight info">✂️ <strong>הצעת ייעול:</strong> קיצוץ של 10% ב"${topCat}" יחסוך לך <strong>${fmt(topAmt * 0.1)}</strong> ויוריד אותה ל-${fmt(target)}.</p>`);
+  }
+
+  // 4. Future prediction
+  const expTxs = transactions.filter(t => t.type === 'expense');
+  if (expTxs.length >= 2) {
+    const avg = totalExpense / expTxs.length;
+    const forecast = totalExpense + (avg * 2);
+    insights.push(`<p class="advisor-insight gold">🔮 <strong>חיזוי קרוב:</strong> בהתבסס על ממוצע של ${fmt(avg)} לתנועה, ההוצאות הצפויות בקרוב עלולות להגיע לכ-<strong>${fmt(forecast)}</strong>.</p>`);
+  }
+
+  return insights.join('') || '<p class="advisor-insight info">📈 המשך להוסיף תנועות לקבלת תובנות מעמיקות יותר.</p>';
+}
+
+// ══════════════════════════════════════════
+// CHART
+// ══════════════════════════════════════════
+function updateChart() {
+  const catMap = calcExpenseByCategory();
+  const labels = Object.keys(catMap);
+  const data   = Object.values(catMap);
+  const canvas = document.getElementById('doughnutChart');
+  const emptyMsg = document.getElementById('emptyChart');
+
+  if (labels.length === 0) {
+    canvas.style.display = 'none';
+    emptyMsg.style.display = 'block';
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    return;
+  }
+
+  canvas.style.display = 'block';
+  emptyMsg.style.display = 'none';
+
+  if (chartInstance) chartInstance.destroy();
+
+  chartInstance = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: CHART_COLORS.slice(0, labels.length),
+        borderColor: '#141e4f',
+        borderWidth: 3,
+        hoverBorderColor: '#1a2d6d',
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: '#94a3b8',
+            font: { family: 'Heebo', size: 11 },
+            padding: 12,
+            boxWidth: 12,
+            boxHeight: 12,
+          }
+        },
+        tooltip: {
+          rtl: true,
+          bodyFont: { family: 'Heebo' },
+          titleFont: { family: 'Heebo', weight: 'bold' },
+          callbacks: {
+            label: ctx => ` ${ctx.label}: ₪${ctx.parsed.toLocaleString('he-IL')}`
+          }
+        }
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════
+// RENDER DOM
+// ══════════════════════════════════════════
+function renderStats() {
+  const { totalIncome, totalExpense, balance } = calcTotals();
+  document.getElementById('totalIncome').textContent  = fmt(totalIncome);
+  document.getElementById('totalExpense').textContent = fmt(totalExpense);
+  const balEl = document.getElementById('balance');
+  balEl.textContent = (balance >= 0 ? '' : '−') + fmt(balance);
+  balEl.style.color = balance >= 0 ? 'var(--cyan)' : 'var(--red)';
+}
+
+function renderTxList() {
+  const list = document.getElementById('txList');
+  const badge = document.getElementById('txBadge');
+  const count = document.getElementById('txCount');
+  badge.textContent = transactions.length;
+  count.textContent = transactions.length;
+
+  if (transactions.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🧾</div>
+        <p style="font-size:0.85rem;">עדיין אין תנועות</p>
+        <p style="font-size:0.78rem;margin-top:0.25rem;">הוסף תנועה ראשונה מהטופס</p>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = transactions.map(tx => {
+    const isIncome = tx.type === 'income';
+    const icon = CATEGORY_ICONS[tx.category] || '📦';
+    const iconBg = isIncome ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+    return `
+      <div class="tx-item">
+        <div class="tx-icon" style="background:${iconBg}">${icon}</div>
+        <div class="tx-desc">
+          <div class="title">${tx.desc}</div>
+          <div class="meta">${tx.category} · ${tx.date}</div>
+        </div>
+        <span class="tx-amount ${tx.type}">${isIncome ? '+' : '−'}${fmt(tx.amount)}</span>
+        <button class="delete-btn" onclick="deleteTransaction(${tx.id})" title="מחק">✕</button>
+      </div>`;
+  }).join('');
+}
+
+function renderAdvisor() {
+  document.getElementById('advisorContent').innerHTML = runAdvisor();
+}
+
+function render() {
+  renderStats();
+  renderTxList();
+  updateChart();
+  renderAdvisor();
+}
+
+// ── Init ──
+render();
+
+// ── PWA: Service Worker Registration ──
+if ('serviceWorker' in navigator) {
+  // Inline SW as a blob URL so it works without a server
+  const swCode = `
+    const CACHE = 'zaram-v1';
+    const ASSETS = ['/'];
+    self.addEventListener('install', e => {
+      e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS).catch(()=>{})));
+      self.skipWaiting();
+    });
+    self.addEventListener('activate', e => {
+      e.waitUntil(caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      ));
+      self.clients.claim();
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        caches.match(e.request).then(r => r || fetch(e.request).catch(() => caches.match('/')))
+      );
+    });
+  `;
+  const blob = new Blob([swCode], {type:'application/javascript'});
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(()=>{});
+}
+
+// ── PWA: Install prompt (Android Chrome "Add to Home Screen") ──
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBanner();
+});
+
+function showInstallBanner() {
+  if (document.getElementById('installBanner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'installBanner';
+  banner.style.cssText = `
+    position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%);
+    background:linear-gradient(135deg,#1a3080,#0e4f8a);
+    border:1px solid rgba(59,130,246,0.4);
+    color:#fff; border-radius:50px; padding:.65rem 1.4rem;
+    font-family:'Heebo',sans-serif; font-size:.88rem; font-weight:700;
+    cursor:pointer; z-index:9999; box-shadow:0 8px 30px rgba(0,0,0,0.4);
+    display:flex; align-items:center; gap:.6rem; white-space:nowrap;
+  `;
+  banner.innerHTML = `<span>📲</span><span>התקן אפליקציה על הטלפון</span><span style="opacity:.6;font-size:.8rem">✕</span>`;
+  banner.addEventListener('click', async (ev) => {
+    if (ev.target.textContent === '✕') { banner.remove(); return; }
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') banner.remove();
+      deferredPrompt = null;
+    }
+  });
+  document.body.appendChild(banner);
+}
+</script>
+</body>
+</html>
