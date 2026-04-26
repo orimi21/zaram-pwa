@@ -1,18 +1,50 @@
 {
-  "name": "זרם – ניהול תזרים",
-  "short_name": "זרם",
-  "description": "ניהול תזרים מזומנים חכם עם יועץ פיננסי",
-  "start_url": "./index.html",
+  "name": "זָרַם · ניהול תזרים חכם",
+  "short_name": "זָרַם",
+  "description": "יועץ פיננסי חכם לניהול תזרים מזומנים משפחתי. הוצאות, הכנסות, התראות חכמות.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0B1437",
-  "theme_color": "#0B1437",
+  "orientation": "any",
+  "background_color": "#0b1226",
+  "theme_color": "#0b1226",
   "lang": "he",
   "dir": "rtl",
+  "categories": ["finance", "productivity", "lifestyle"],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
-  "categories": ["finance", "productivity"],
-  "screenshots": []
+  "shortcuts": [
+    {
+      "name": "הוסף תנועה",
+      "short_name": "הוסף",
+      "description": "הוסף תנועה חדשה במהירות",
+      "url": "./?action=add",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "הדבקה חכמה",
+      "short_name": "הדבק",
+      "description": "הדבק רשימה מוואטסאפ",
+      "url": "./?action=paste",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
 }
